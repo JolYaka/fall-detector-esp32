@@ -1,11 +1,5 @@
-/*
- * Sketch de collecte des donnees (envoyees a Edge Impulse via le data forwarder).
- * Pour l'utiliser : recopier ce contenu dans src/main.cpp.
- *
- * Detecteur de chute - collecte des donnees
- * Carte : ESP32-S3 WROOM-1 N16R8 (double USB-C)
- * Capteur : ADXL345 en I2C (adresse 0x53)
- */
+// Collecte des donnees pour Edge Impulse (data forwarder)
+// a copier dans src/main.cpp pour l'utiliser
 
 #include <Wire.h>
 #include <Adafruit_Sensor.h>

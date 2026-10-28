@@ -1,19 +1,8 @@
-# Détecteur de chute embarqué : ESP32-S3 + ADXL345 (TinyML / Edge Impulse)
+# Détecteur de chute ESP32-S3 + ADXL345 (Edge Impulse)
 
 Il s'agit d'un détecteur de chute. Sa particularité est qu'il est propulsé par un modèle de machine learning directement installé sur un microcontrôleur ESP32. L'inférence se fait localement, sans cloud ni PC, c'est-à-dire que les données sont collectées et analysées sur place pour ensuite faire une prédiction.
 
 ![Montage complet](images/montage_vue_ensemble.jpg)
-
-## Sommaire
-- [Le projet](#le-projet)
-- [Matériel et câblage](#matériel-et-câblage)
-- [Fonctionnement](#fonctionnement)
-- [Le modèle](#le-modèle)
-- [Résultats](#résultats)
-- [Installation et utilisation](#installation-et-utilisation)
-- [Structure du dépôt](#structure-du-dépôt)
-- [Difficultés rencontrées](#difficultés-rencontrées)
-- [Pistes d'amélioration](#pistes-damélioration)
 
 ## Le projet
 
@@ -34,25 +23,11 @@ Pour les essais, le capteur est fixé sur un portefeuille et relié à la carte,
 |---|---|
 | ![Capteur](images/capteur_adxl345.jpg) | ![Carte](images/carte_esp32s3.jpg) |
 
-```
-ADXL345            ESP32-S3
-  VCC  ───────────  3V3
-  GND  ───────────  GND
-  SDA  ───────────  GPIO 8
-  SCL  ───────────  GPIO 9
-  CS   ───────────  3V3     (mode I2C)
-  SDO  ───────────  GND     (adresse I2C 0x53)
-```
+Câblage : VCC sur 3V3, GND sur GND, SDA sur GPIO 8, SCL sur GPIO 9, CS sur 3V3 (mode I2C) et SDO sur GND (adresse 0x53).
 
-Le capteur est réglé sur ±16 g, car un impact dépasse largement ±2 g : avec une plage plus petite, le pic de la chute serait écrêté et on perdrait justement l'information la plus utile.
+J'ai mis le capteur sur ±16 g parce qu'une chute dépasse facilement ±2 g, et avec une plage plus petite le pic de l'impact serait coupé.
 
 ## Fonctionnement
-
-```
-[ADXL345] --I2C--> [ESP32-S3] --USB--> [Edge Impulse Studio] --> modèle entraîné
-                                                                      |
-                 inférence sur la carte (le modèle tourne sur l'ESP32) <┘
-```
 
 1. Collecte des données avec `edge-impulse-data-forwarder`, pour les trois classes.
 2. Entraînement d'un réseau de neurones sur Edge Impulse.
@@ -70,7 +45,7 @@ Le capteur est réglé sur ±16 g, car un impact dépasse largement ±2 g : avec
 | Occupation sur la carte | RAM 6,8 %, flash 6,3 % |
 | Temps d'inférence | moins de 1 ms |
 
-La classe `ramasser` correspond aux manipulations brusques qui ne sont pas des chutes. Elle permet de réduire les fausses alertes : sans elle, le simple fait d'attraper ou de secouer l'objet pourrait être détecté comme une chute.
+La classe `ramasser` sert pour les mouvements brusques qui ne sont pas des chutes (attraper ou secouer l'objet). Sans elle, attraper l'objet pourrait déclencher une fausse alerte.
 
 ## Résultats
 
@@ -89,11 +64,9 @@ Matrice de confusion (lignes : classe réelle, colonnes : classe prédite) :
 | normal | 0 % | 90,2 % | 9,8 % |
 | ramasser | 1,7 % | 18,1 % | 80,2 % |
 
-- Les fausses alertes sont rares : 0 % des mouvements normaux et 1,7 % des manipulations sont pris pour une chute.
-- Environ 13 % des chutes ne sont pas détectées (classées en normal ou ramasser). C'est le premier point à améliorer.
-- La confusion entre `ramasser` et `normal` est sans conséquence pour la sécurité, puisqu'il s'agit dans les deux cas d'un non-événement.
+Peu de fausses alertes (0 % des mouvements normaux et 1,7 % des manipulations sont classés en chute), mais environ 13 % des chutes ne sont pas détectées. La confusion entre `ramasser` et `normal` n'est pas grave, ce ne sont pas des chutes dans les deux cas.
 
-Lors d'un test réel sur la carte, 4 chutes provoquées ont été détectées toutes les 4, avec un score `chute` de 1,00, et la classe `ramasser` s'est bien activée pendant la manipulation, sans aucune fausse alerte.
+En test réel sur la carte, j'ai fait 4 chutes et les 4 ont été détectées (score `chute` à 1,00). Quand je manipulais l'objet c'est bien `ramasser` qui sortait, pas d'alerte.
 
 ## Installation et utilisation
 
@@ -114,26 +87,20 @@ Le modèle entraîné est déjà inclus dans `lib/`. Pour collecter de nouvelles
 
 ## Structure du dépôt
 
-```
-fall-detector-esp32/
-├── platformio.ini            # configuration de la carte, des bibliothèques et du moniteur
-├── src/main.cpp              # programme d'inférence embarquée
-├── collecte/main_collecte.cpp  # programme de collecte des données
-├── lib/                      # bibliothèque Edge Impulse (modèle + SDK)
-├── images/                   # photos du montage
-└── README.md
-```
+- `src/main.cpp` : programme d'inférence
+- `collecte/main_collecte.cpp` : programme de collecte
+- `lib/` : bibliothèque exportée par Edge Impulse
+- `images/` : photos du montage
 
 ## Difficultés rencontrées
 
-- Le port série de la carte se déconnectait à chaque ouverture du moniteur. Le problème venait des signaux DTR et RTS, qui redémarraient la carte ; il a été réglé en les désactivant dans `platformio.ini`.
-- Le modèle doit recevoir les données exactement comme pendant l'entraînement, c'est-à-dire les valeurs brutes en m/s² avec la plage ±16 g. Une simple conversion d'unité suffit à fausser les prédictions.
-- La quantification en int8 fait passer la précision d'environ 94 % à 86 %, mais c'est cette version qui tourne sur la carte, car elle est environ quatre fois plus légère.
-- Pendant les tests de chute, un câble USB trop tendu peut provoquer un redémarrage de la carte au moment de l'impact. Il faut donc laisser du mou au câble.
+- Le port série se déconnectait à chaque ouverture du moniteur. C'était DTR et RTS qui faisaient redémarrer la carte, je les ai désactivés dans `platformio.ini`.
+- Il faut donner au modèle exactement les mêmes données qu'à l'entraînement (brutes, en m/s², plage ±16 g). Une simple conversion d'unité fausse les prédictions.
+- En int8 la précision passe d'environ 94 % à 86 %, mais j'ai gardé cette version car elle est environ 4 fois plus légère.
+- Pendant les tests, la carte redémarrait parfois à l'impact quand le câble USB était trop tendu.
 
 ## Pistes d'amélioration
 
-- Collecter des chutes plus variées (angles, hauteurs, surfaces, vitesses) afin de réduire les 13 % de chutes manquées.
-- Vérifier l'équilibre des classes avant une nouvelle collecte.
-- Utiliser la LED RGB intégrée (GPIO 48) comme alarme visuelle, puis un buzzer.
-- Rendre le détecteur autonome, sur batterie et sans PC, pour pouvoir le porter sur soi.
+- plus de données de chute (angles, hauteurs, surfaces différentes)
+- alarme avec la LED RGB de la carte (GPIO 48) puis un buzzer
+- version sur batterie, sans PC
